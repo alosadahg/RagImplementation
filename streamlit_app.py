@@ -8,7 +8,7 @@ load_dotenv(dotenv_path='.env')
 
 client = Groq(api_key=os.getenv('GROQ_API_KEY'))
 
-model = "llama3-groq-70b-8192-tool-use-preview"
+model = "llama-3.3-70b-versatile"
 
 MAX_HISTORY = 20
 
@@ -93,5 +93,4 @@ if prompt := st.chat_input("Ask something"):
     # st.session_state.messages.append({"role": "tool", "content": f"When writing pseudocode, use this syntax {read_pseudocode_syntax()}", "tool_call_id": "pseudocode_syntax"})
     st.session_state.messages.append({"role": "user", "content": prompt})
     generate_response()
-
 
