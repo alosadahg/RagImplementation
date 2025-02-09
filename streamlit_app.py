@@ -14,7 +14,7 @@ load_dotenv(dotenv_path='.env')
 
 url = os.getenv('SUPABASE_URL')
 key = os.getenv('SUPABASE_KEY')
-supabase: Client = create_client(url, key)gi
+supabase: Client = create_client(url, key)
 
 api_keys = [os.getenv('GROQ_API_KEY')]
 api_index = 0
@@ -83,6 +83,7 @@ def display_text(response):
             st.markdown(segment)
 
 async def generate_response():
+    # 
     # TODO: Add caching to minimize token limit error i guess
     # cache_key = tuple(msg["content"] for msg in session_history if msg["role"] == "user")
     # if cache_key in cache:
