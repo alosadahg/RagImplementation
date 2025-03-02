@@ -9,8 +9,11 @@ from dotenv import load_dotenv
 from groq import Groq, RateLimitError
 from sentence_transformers import SentenceTransformer
 from supabase import create_client, Client
+import torch
 
 load_dotenv(dotenv_path='.env')
+
+torch.classes.__path__ = []
 
 url = os.getenv('SUPABASE_URL')
 key = os.getenv('SUPABASE_KEY')
