@@ -10,6 +10,7 @@ from groq import Groq, RateLimitError
 from sentence_transformers import SentenceTransformer
 from supabase import create_client, Client
 import torch
+import pandas as pd
 
 load_dotenv(dotenv_path='.env')
 
@@ -34,20 +35,22 @@ def load_from_bucket(file_name):
     return file_name
 
 def load_embeddings():
-    course_index = faiss.read_index(load_from_bucket('course-embeddings.index'))
-    problem_index = faiss.read_index(load_from_bucket('problem-embeddings.index'))
-    return course_index, problem_index
+    course_index = faiss.read_index(load_from_bucket('course_embeddings2.index'))
+    # problem_index = faiss.read_index(load_from_bucket('problem-embeddings.index'))
+    return course_index
 
 def find_relevant_src(index, data_src, user_query):
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     query_embeddings = embedding_model.encode([user_query])
-    k = 2
+    k = 10
     distances, indices = index.search(query_embeddings, k)
     related_data = []
-    for rank, idx in enumerate(indices[0], start=1):
-        # print(distances[0][rank-1])
-        if distances[0][rank-1] > 0.9:
-            related_data.append(data_src[idx])
+    print(distances[0])
+    good_results = pd.DataFrame([(idx, dist) for dist, idx in zip(distances[0], indices[0]) if dist < 1.0])
+    results_df = []
+    for ind, row in good_results.iterrows():
+        related_data.append(data_src.iloc[row[0].astype(int)]['combined_text'])
+    print(related_data)
     return related_data
 
 async def call_api_with_retry(messages, max_retries=5):
@@ -113,8 +116,9 @@ if "messages" not in st.session_state:
     session_history.append(system_prompt)
     asyncio.run(generate_response())
 
-course_index, problem_index = load_embeddings()
+course_index = load_embeddings()
 course_src = np.load(load_from_bucket('courses.npy'))
+course_df = pd.read_csv(load_from_bucket('courses.csv'))
 problems_src = np.load(load_from_bucket('problems.npy'))
 
 for message in st.session_state.messages:
@@ -126,9 +130,9 @@ if prompt := st.chat_input("Ask something"):
     with st.chat_message("user"):
         display_text(prompt)
     
-    relevant_courses = find_relevant_src(course_index, course_src, prompt)
-    relevant_problems = find_relevant_src(problem_index, problems_src, prompt)
-    relevant_data = relevant_courses + relevant_problems
+    relevant_courses = find_relevant_src(course_index, course_df, prompt)
+    # relevant_problems = find_relevant_src(problem_index, problems_src, prompt)
+    relevant_data = relevant_courses #+ relevant_problems
     user_prompt = {"role": "user", "content": prompt}
     session_history.append(user_prompt)
     st.session_state.messages.append(user_prompt)
@@ -136,10 +140,10 @@ if prompt := st.chat_input("Ask something"):
     rel_data = ""
     if len(relevant_courses) > 0:
         rel_data += f"Include this suggested courses (format as a list) from Codechum to guide the user: {"\n".join(relevant_courses)}\n"
-    if len(relevant_problems) > 0:
-        rel_data += f"Include this suggested problems (format as a list) from Codechum to guide the user: {"\n".join(relevant_problems)}\n"
-    if not rel_data:
-        rel_data = "State that you are not using sources from Codechum."
+    # if len(relevant_problems) > 0:
+    #     rel_data += f"Include this suggested problems (format as a list) from Codechum to guide the user: {"\n".join(relevant_problems)}\n"
+    # if not rel_data:
+    #     rel_data = "State that you are not using sources from Codechum."
     st.session_state.messages.append({"role": "system", "content": os.getenv('TEST_MODE_GUIDELINES') + rel_data})
     
     asyncio.run(generate_response())
