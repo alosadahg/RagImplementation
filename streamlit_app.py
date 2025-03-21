@@ -10,6 +10,8 @@ from groq import Groq, RateLimitError
 from sentence_transformers import SentenceTransformer
 from supabase import create_client, Client
 import torch
+import pandas as pd
+import json
 
 load_dotenv(dotenv_path='.env')
 
@@ -34,20 +36,53 @@ def load_from_bucket(file_name):
     return file_name
 
 def load_embeddings():
-    course_index = faiss.read_index(load_from_bucket('course-embeddings.index'))
-    problem_index = faiss.read_index(load_from_bucket('problem-embeddings.index'))
-    return course_index, problem_index
+    data_src_index = faiss.read_index(load_from_bucket('course_embeddings_v3.index'))
+    return data_src_index
+
+def extract_filtered_json_data(data, matched_keys):
+    filtered_data = data.iloc[matched_keys, :]
+
+    grouped_json = (
+        filtered_data.groupby(['topic', 'lesson_title'])
+        .apply(lambda x: [
+            list(x['course_title'].unique()), 
+            list(x['language'].unique()),  
+            x[['problem_title', 'difficulty', 'type']].drop_duplicates().to_dict(orient='records')  
+        ])
+        .reset_index()
+    )
+
+    grouped_json.columns = ['topic', 'lesson_title', 'data']
+
+    final_output = [
+        {
+            "supplementary_courses": row["data"][0], 
+            "topic": row["topic"],
+            "lesson_title": row["lesson_title"], 
+            "practice_problems": row["data"][2],
+            "languages": row["data"][1], 
+        }
+        for _, row in grouped_json.iterrows()
+    ]
+    return final_output
 
 def find_relevant_src(index, data_src, user_query):
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     query_embeddings = embedding_model.encode([user_query])
-    k = 2
+
+    k = 10
     distances, indices = index.search(query_embeddings, k)
+    good_results = pd.DataFrame([(idx, dist) for idx, dist in zip(indices[0], distances[0]) if dist < 1])
+    # display(good_results)
+
+    # for _, row in good_results.iterrows():
+    #     display(df_data_src.iloc[row[0].astype(int)])
+
     related_data = []
-    for rank, idx in enumerate(indices[0], start=1):
-        # print(distances[0][rank-1])
-        if distances[0][rank-1] > 0.9:
-            related_data.append(data_src[idx])
+    if len(good_results) > 0:
+        extracted_data = extract_filtered_json_data(data_src, good_results[0].tolist())
+        related_data.extend(extracted_data)
+
     return related_data
 
 async def call_api_with_retry(messages, max_retries=5):
@@ -113,9 +148,8 @@ if "messages" not in st.session_state:
     session_history.append(system_prompt)
     asyncio.run(generate_response())
 
-course_index, problem_index = load_embeddings()
-course_src = np.load(load_from_bucket('courses.npy'))
-problems_src = np.load(load_from_bucket('problems.npy'))
+data_index = load_embeddings()
+data_src = pd.read_csv(load_from_bucket('codechum_src.csv'))
 
 for message in st.session_state.messages:
     if message["role"] != "system" and message["role"] != "tool":
@@ -126,22 +160,19 @@ if prompt := st.chat_input("Ask something"):
     with st.chat_message("user"):
         display_text(prompt)
     
-    relevant_courses = find_relevant_src(course_index, course_src, prompt)
-    relevant_problems = find_relevant_src(problem_index, problems_src, prompt)
-    relevant_data = relevant_courses + relevant_problems
+    relevant_data = find_relevant_src(data_index, data_src, prompt)
+    # print(relevant_data)
     user_prompt = {"role": "user", "content": prompt}
     session_history.append(user_prompt)
     st.session_state.messages.append(user_prompt)
-    
-    rel_data = ""
-    if len(relevant_courses) > 0:
-        rel_data += f"Include this suggested courses (format as a list) from Codechum to guide the user: {"\n".join(relevant_courses)}\n"
-    if len(relevant_problems) > 0:
-        rel_data += f"Include this suggested problems (format as a list) from Codechum to guide the user: {"\n".join(relevant_problems)}\n"
-    if not rel_data:
-        rel_data = "State that you are not using sources from Codechum."
-    st.session_state.messages.append({"role": "system", "content": os.getenv('TEST_MODE_GUIDELINES') + rel_data})
-    
+    st.session_state.messages.append({"role": "system", "content": os.getenv('TEST_MODE_GUIDELINES')})
+    if relevant_data:
+        relevant_data_str = json.dumps(relevant_data, indent=4)  # Convert JSON to string
+        st.session_state.messages.append({
+            "role": "system",
+            "content": "Include this data (have it in a list format) from Codechum for suggestions:\n" + relevant_data_str
+        })
+    # print(os.getenv('TEST_MODE_GUIDELINES'))
     asyncio.run(generate_response())
     for msg in st.session_state.messages:
         if msg['role'] == 'system':
