@@ -12,6 +12,7 @@ from supabase import create_client, Client
 import torch
 import pandas as pd
 import json
+import uuid
 
 load_dotenv(dotenv_path='.env')
 
@@ -39,6 +40,13 @@ def load_embeddings():
     data_src_index = faiss.read_index(load_from_bucket('course_embeddings_v3.index'))
     return data_src_index
 
+def save_session_to_supabase(session_id, messages):
+    data = {
+        "session_id": str(session_id),
+        "messages": json.dumps(messages, indent=4)
+    }
+    supabase.table("session_history").upsert(data).execute()
+
 def extract_filtered_json_data(data, matched_keys):
     filtered_data = data.iloc[matched_keys, :]
 
@@ -47,7 +55,7 @@ def extract_filtered_json_data(data, matched_keys):
             list(x['course_title'].unique()), 
             list(x['language'].unique()),  
             x[['problem_title', 'difficulty', 'type']].drop_duplicates().to_dict(orient='records')  
-        ])
+        ], include_groups=False)
     .reset_index())
 
     grouped_json.columns = ['topic', 'lesson_title', 'data']
@@ -135,9 +143,14 @@ async def generate_response():
             display_text(response) 
     session_history.append(result)
     st.session_state.messages.append(result)
-     
+    save_session_to_supabase(st.session_state.session_id, st.session_state.messages)
 
 st.title("Learning Assistant (with CodeChum)")
+
+if "session_id" not in st.session_state:
+    session_id = uuid.uuid4()
+    st.session_state.session_id = session_id
+    print("Session ID:", st.session_state.session_id)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -146,8 +159,16 @@ if "messages" not in st.session_state:
     session_history.append(system_prompt)
     asyncio.run(generate_response())
 
-data_index = load_embeddings()
-data_src = pd.read_csv(load_from_bucket('codechum_src.csv'))
+if "data_index" not in st.session_state:
+    print("Initializing data index")
+    st.session_state.data_index = load_embeddings()
+
+if "data_src" not in st.session_state:
+    print("Initializing data source")
+    st.session_state.data_src = pd.read_csv(load_from_bucket('codechum_src.csv'))
+
+data_index = st.session_state.data_index
+data_src = st.session_state.data_src
 
 for message in st.session_state.messages:
     if message["role"] != "system" and message["role"] != "tool":
