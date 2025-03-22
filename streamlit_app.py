@@ -42,15 +42,13 @@ def load_embeddings():
 def extract_filtered_json_data(data, matched_keys):
     filtered_data = data.iloc[matched_keys, :]
 
-    grouped_json = (
-        filtered_data.groupby(['topic', 'lesson_title'])
+    grouped_json = (filtered_data.groupby(['topic', 'lesson_title'], group_keys=False)
         .apply(lambda x: [
             list(x['course_title'].unique()), 
             list(x['language'].unique()),  
             x[['problem_title', 'difficulty', 'type']].drop_duplicates().to_dict(orient='records')  
         ])
-        .reset_index()
-    )
+    .reset_index())
 
     grouped_json.columns = ['topic', 'lesson_title', 'data']
 
