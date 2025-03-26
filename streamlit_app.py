@@ -40,12 +40,14 @@ def load_embeddings():
     data_src_index = faiss.read_index(load_from_bucket('course_embeddings_v3.index'))
     return data_src_index
 
-def save_session_to_supabase(session_id, messages):
+async def save_session_to_supabase(session_id, messages):
     data = {
         "session_id": str(session_id),
         "messages": json.dumps(messages, indent=4)
     }
-    supabase.table("session_history").upsert(data).execute()
+
+    await asyncio.to_thread(lambda: supabase.table("session_history").upsert(data).execute())
+
 
 def extract_filtered_json_data(data, matched_keys):
     filtered_data = data.iloc[matched_keys, :]
@@ -143,7 +145,7 @@ async def generate_response():
             display_text(response) 
     session_history.append(result)
     st.session_state.messages.append(result)
-    save_session_to_supabase(st.session_state.session_id, st.session_state.messages)
+    await save_session_to_supabase(st.session_state.session_id, st.session_state.messages)
 
 st.title("Learning Assistant (with CodeChum)")
 
