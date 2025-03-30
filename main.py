@@ -148,7 +148,7 @@ async def call_api_with_retry(messages: list, max_retries: int = 5) -> str:
 
     return "I'm currently experiencing high traffic. Please try again in a moment."
 
-def save_session_to_supabase(session_id: str, messages: list):
+async def save_session_to_supabase(session_id, messages):
     """
     Save the entire conversation to Supabase (table: session_history).
     """
@@ -156,7 +156,7 @@ def save_session_to_supabase(session_id: str, messages: list):
         "session_id": str(session_id),
         "messages": json.dumps(messages, indent=4)
     }
-    supabase.table("session_history").upsert(data).execute()
+    await asyncio.to_thread(lambda: supabase.table("session_history").upsert(data).execute())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
