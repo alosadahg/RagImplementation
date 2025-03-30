@@ -4,6 +4,7 @@ import random
 import asyncio
 import json
 import uuid
+import time
 from typing import Optional, List, Any
 
 from contextlib import asynccontextmanager
@@ -193,7 +194,9 @@ class AskResponse(BaseModel):
     The shape of JSON we return. 
     """
     session_id: str
+    prompt: str
     response: str
+    response_time: float
 
 @app.get("/")
 def home():
@@ -224,6 +227,13 @@ async def ask_endpoint(request: AskRequest):
 
     session_history = SESSION_CACHE[session_id]
 
+    guidelines = os.getenv('TEST_MODE_GUIDELINES')
+    if guidelines:
+        session_history.append({
+            "role": "system",
+            "content": guidelines
+        })
+
     # 3) The user's message
     user_prompt_message = {
         "role": "user",
@@ -238,12 +248,15 @@ async def ask_endpoint(request: AskRequest):
         data_str = json.dumps(relevant_data, indent=4)
         session_history.append({
             "role": "system",
-            "content": f"Use this data from Codechum for suggestions:\n{data_str}"
+            "content": "Include this data (have it in a list format) from Codechum for suggestions:\n" + data_str
         })
 
     # 5) Call the LLM
+    start_time = time.time()
     assistant_reply = await call_api_with_retry(session_history)
-    # add the assistant's reply to the conversation
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
     session_history.append({
         "role": "assistant",
         "content": assistant_reply
@@ -256,4 +269,9 @@ async def ask_endpoint(request: AskRequest):
     SESSION_CACHE[session_id] = session_history
 
     # 8) Return the response to the client
-    return AskResponse(session_id=session_id, response=assistant_reply)
+    return AskResponse(
+        session_id=session_id,
+        prompt=request.prompt,
+        response=assistant_reply,
+        response_time=elapsed_time
+    )
