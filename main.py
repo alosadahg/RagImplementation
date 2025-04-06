@@ -263,7 +263,7 @@ async def ask_endpoint(request: AskRequest):
     })
 
     # 6) Save session to Supabase if you want (optional)
-    save_session_to_supabase(session_id, session_history)
+    await save_session_to_supabase(session_id, session_history)
 
     # 7) Store updated conversation in our session cache
     SESSION_CACHE[session_id] = session_history
