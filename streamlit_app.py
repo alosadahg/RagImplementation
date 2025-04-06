@@ -49,6 +49,68 @@ def load_embeddings(file):
     return data_src_index
 
 
+def load_index_files():
+    """Loads embedding index files into session state."""
+    index_files = {
+        "data_index": "course_embeddings_v3.index",
+        "bst_index": "bst_embeddings.index",
+        "advanced_trees_index": "advanced_trees_embeddings.index",
+        "algorithms_index": "analysis_of_algorithms_embeddings.index",
+        "hash_index": "hash_tables_embeddings.index",
+        "sorting_index": "sorting_algorithms_embeddings.index",
+        "memory_index": "stack_vs_heap_embeddings.index",
+    }
+    for key, file in index_files.items():
+        if key not in st.session_state:
+            print(f"Initializing {key}")
+            st.session_state[key] = load_embeddings(file)
+
+def load_csv_files():
+    """Loads CSV source files into session state."""
+    csv_files = {
+        "data_src": "codechum_src.csv",
+        "bst_src": "bst_src.csv",
+        "advanced_trees_src": "advanced_trees_src.csv",
+        "algorithms_src": "analysis_of_algorithms_src.csv",
+        "hash_src": "hash_tables_src.csv",
+        "sorting_src": "sorting_algorithms_src.csv",
+        "memory_src": "stack_vs_heap_src.csv",
+    }
+    for key, file in csv_files.items():
+        if key not in st.session_state:
+            print(f"Initializing {key}")
+            st.session_state[key] = pd.read_csv(load_from_bucket(file))
+
+def append_relevant_data(label, data):
+    """Appends relevant data to the session state messages."""
+    if data:
+        relevant_data_str = json.dumps(data, indent=4)
+        st.session_state.messages.append({
+            "role": "system",
+            "content": f"{label}:\n{relevant_data_str}"
+        })
+
+def process_relevant_data(prompt):
+    """Finds relevant data for each index-source pair and appends it to session messages."""
+    datasets = {
+        "Codechum": ("data_index", "data_src", "json"),
+        "the lesson on CS244 BST": ("bst_index", "bst_src", "list"),
+        "the lesson on CS244 Advanced Trees": ("advanced_trees_index", "advanced_trees_src", "list"),
+        "the lesson on CS244 Analysis of Algorithms": ("algorithms_index", "algorithms_src", "list"),
+        "the lesson on CS244 Hash Tables": ("hash_index", "hash_src", "list"),
+        "the lesson on CS244 Sorting Algorithms": ("sorting_index", "sorting_src", "list"),
+        "the lesson on CS244 Stack vs Heap Memory": ("memory_index", "memory_src", "list"),
+    }
+
+    for label, (index_key, src_key, format_type) in datasets.items():
+        relevant_data = find_relevant_src(
+            st.session_state[index_key], 
+            st.session_state[src_key], 
+            format_type, 
+            prompt
+        )
+        append_relevant_data(f"Include this data from {label}", relevant_data)
+
 async def save_session_to_supabase(session_id, messages):
     data = {"session_id": str(session_id), "messages": json.dumps(messages, indent=4)}
 
@@ -201,27 +263,15 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = session_id
     print("Session ID:", st.session_state.session_id)
 
+load_index_files()
+load_csv_files()
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
     system_prompt = {"role": "system", "content": "Greet the user"}
     st.session_state.messages.append(system_prompt)
     session_history.append(system_prompt)
     asyncio.run(generate_response())
-
-print(st.session_state.messages)
-
-if "data_index" not in st.session_state:
-    print("Initializing data index")
-    st.session_state.data_index = load_embeddings("course_embeddings_v3.index")
-    st.session_state.bst_index = load_embeddings("bst_embeddings.index")
-
-if "data_src" not in st.session_state:
-    print("Initializing data source")
-    st.session_state.data_src = pd.read_csv(load_from_bucket("codechum_src.csv"))
-    st.session_state.bst_src = pd.read_csv(load_from_bucket("bst_src.csv"))
-
-data_index = st.session_state.data_index
-data_src = st.session_state.data_src
 
 for message in st.session_state.messages:
     if message["role"] != "system" and message["role"] != "tool":
@@ -235,37 +285,13 @@ if prompt := st.chat_input("Ask something"):
     if is_injection(prompt):
         prompt = f"{os.getenv("PROMPT_INJECTION_FLAG_PROMPT")} {prompt}"
 
-    relevant_data = find_relevant_src(data_index, data_src, "json", prompt)
-    bst_relevant_data = find_relevant_src(st.session_state.bst_index, st.session_state.bst_src, "np", prompt)
-    
     user_prompt = {"role": "user", "content": prompt}
     session_history.append(user_prompt)
     st.session_state.messages.append(user_prompt)
     st.session_state.messages.append(
         {"role": "system", "content": os.getenv("TEST_MODE_GUIDELINES")}
     )
-    if relevant_data:
-        relevant_data_str = json.dumps(
-            relevant_data, indent=4
-        )  # Convert JSON to string
-        st.session_state.messages.append(
-            {
-                "role": "system",
-                "content": "Include this data (have it in a list format) from Codechum for suggestions:\n"
-                + relevant_data_str
-            }
-        )
-    if bst_relevant_data:
-        relevant_data_str = json.dumps(
-            bst_relevant_data, indent=4
-        )  # Convert JSON to string
-        st.session_state.messages.append(
-            {
-                "role": "system",
-                "content": "Remember that this data is separate from Codechum. Include this data:\n"
-                + relevant_data_str
-            }
-        )
+    process_relevant_data(prompt)
     print(st.session_state.messages)
     # print(os.getenv('TEST_MODE_GUIDELINES'))
     asyncio.run(generate_response())
