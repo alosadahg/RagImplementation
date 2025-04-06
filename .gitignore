@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# Relevant data
+/api/codechum_src.csv
+/api/course_embeddings_v3.index
+
 # Distribution / packaging
 .Python
 build/
