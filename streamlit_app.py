@@ -194,7 +194,7 @@ def is_injection(text, threshold=0.95):
     return False
 
 
-st.title("Learning Assistant (with CodeChum)")
+st.title("Bruno - Your Purrfect Learning Companion")
 
 if "session_id" not in st.session_state:
     session_id = uuid.uuid4()
