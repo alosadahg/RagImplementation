@@ -13,6 +13,7 @@ import torch
 import pandas as pd
 import json
 import uuid
+import requests  # Import requests library for Lakera Guard API call
 
 load_dotenv(dotenv_path='.env')
 
@@ -20,6 +21,7 @@ torch.classes.__path__ = []
 
 url = os.getenv('SUPABASE_URL')
 key = os.getenv('SUPABASE_KEY')
+lakera_guard_api_key = os.getenv('LAKERA_GUARD_API_KEY')  # API key for Lakera Guard
 supabase: Client = create_client(url, key)
 
 api_keys = [os.getenv('GROQ_API_KEY')]
@@ -47,7 +49,6 @@ async def save_session_to_supabase(session_id, messages):
     }
 
     await asyncio.to_thread(lambda: supabase.table("session_history").upsert(data).execute())
-
 
 def extract_filtered_json_data(data, matched_keys):
     filtered_data = data.iloc[matched_keys, :]
@@ -81,10 +82,6 @@ def find_relevant_src(index, data_src, user_query):
     k = 10
     distances, indices = index.search(query_embeddings, k)
     good_results = pd.DataFrame([(idx, dist) for idx, dist in zip(indices[0], distances[0]) if dist < 1])
-    # display(good_results)
-
-    # for _, row in good_results.iterrows():
-    #     display(df_data_src.iloc[row[0].astype(int)])
 
     related_data = []
     if len(good_results) > 0:
@@ -92,6 +89,25 @@ def find_relevant_src(index, data_src, user_query):
         related_data.extend(extracted_data)
 
     return related_data
+
+def call_lakera_guard_api(user_message):
+    """Function to send the user's message to Lakera Guard API."""
+    headers = {
+        "Authorization": f"Bearer {lakera_guard_api_key}",
+    }
+    payload = {
+        "messages": [{"content": user_message, "role": "user"}]
+    }
+    response = requests.post(
+        "https://api.lakera.ai/v2/guard",
+        json=payload,
+        headers=headers
+    )
+    if response.status_code == 200:
+        return response.json()  # Returns the Lakera Guard response
+    else:
+        print(f"Error calling Lakera Guard API: {response.status_code}")
+        return None
 
 async def call_api_with_retry(messages, max_retries=5):
     global api_index, client
@@ -129,16 +145,7 @@ def display_text(response):
             st.markdown(segment)
 
 async def generate_response():
-    # 
-    # TODO: Add caching to minimize token limit error i guess
-    # cache_key = tuple(msg["content"] for msg in session_history if msg["role"] == "user")
-    # if cache_key in cache:
-    #     response = cache[cache_key]
-    # else:
     response = await call_api_with_retry(st.session_state.messages)
-    # if response:
-    #     cache[cache_key] = response
-    
     result = {"role": "assistant", "content": response}
     if len(st.session_state.messages) > 1:
         with st.chat_message("assistant"):
@@ -147,7 +154,7 @@ async def generate_response():
     st.session_state.messages.append(result)
     await save_session_to_supabase(st.session_state.session_id, st.session_state.messages)
 
-st.title("Learning Assistant (with CodeChum)")
+st.title("Bruno - Learning Assistant")
 
 if "session_id" not in st.session_state:
     session_id = uuid.uuid4()
@@ -181,20 +188,27 @@ if prompt := st.chat_input("Ask something"):
     with st.chat_message("user"):
         display_text(prompt)
     
-    relevant_data = find_relevant_src(data_index, data_src, prompt)
-    # print(relevant_data)
-    user_prompt = {"role": "user", "content": prompt}
-    session_history.append(user_prompt)
-    st.session_state.messages.append(user_prompt)
-    st.session_state.messages.append({"role": "system", "content": os.getenv('TEST_MODE_GUIDELINES')})
-    if relevant_data:
-        relevant_data_str = json.dumps(relevant_data, indent=4)  # Convert JSON to string
+    # Call Lakera Guard to validate the input before processing
+    lakera_guard_response = call_lakera_guard_api(prompt)
+    if lakera_guard_response and lakera_guard_response.get("is_safe", True):
+        relevant_data = find_relevant_src(data_index, data_src, prompt)
+        user_prompt = {"role": "user", "content": prompt}
+        session_history.append(user_prompt)
+        st.session_state.messages.append(user_prompt)
+        st.session_state.messages.append({"role": "system", "content": os.getenv('TEST_MODE_GUIDELINES')})
+        if relevant_data:
+            relevant_data_str = json.dumps(relevant_data, indent=4)
+            st.session_state.messages.append({
+                "role": "system",
+                "content": "Include this data (have it in a list format) from Codechum for suggestions:\n" + relevant_data_str
+            })
+        asyncio.run(generate_response())
+    else:
         st.session_state.messages.append({
             "role": "system",
-            "content": "Include this data (have it in a list format) from Codechum for suggestions:\n" + relevant_data_str
+            "content": "Warning: The input content may not be safe or valid."
         })
-    # print(os.getenv('TEST_MODE_GUIDELINES'))
-    asyncio.run(generate_response())
+    
     for msg in st.session_state.messages:
         if msg['role'] == 'system':
             st.session_state.messages.remove(msg)
