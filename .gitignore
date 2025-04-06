@@ -7,8 +7,8 @@ __pycache__/
 *.so
 
 # Relevant data
-/api/codechum_src.csv
-/api/course_embeddings_v3.index
+codechum_src.csv
+course_embeddings_v3.index
 
 # Distribution / packaging
 .Python
