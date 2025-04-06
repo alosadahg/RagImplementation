@@ -44,8 +44,8 @@ def load_from_bucket(file_name):
     return file_name
 
 
-def load_embeddings():
-    data_src_index = faiss.read_index(load_from_bucket("course_embeddings_v3.index"))
+def load_embeddings(file):
+    data_src_index = faiss.read_index(load_from_bucket(file))
     return data_src_index
 
 
@@ -89,12 +89,19 @@ def extract_filtered_json_data(data, matched_keys):
     ]
     return final_output
 
+def extract_from_np(data_src, indices):
+    related_data = []
+    for index in indices:
+        data_list = data_src["chunk"].tolist() 
+        related_data.append(data_list[index])
 
-def find_relevant_src(index, data_src, user_query):
+    return related_data
+
+def find_relevant_src(index, data_src, type, user_query):
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     query_embeddings = embedding_model.encode([user_query])
 
-    k = 10
+    k = 4
     distances, indices = index.search(query_embeddings, k)
     good_results = pd.DataFrame(
         [(idx, dist) for idx, dist in zip(indices[0], distances[0]) if dist < 1]
@@ -106,7 +113,10 @@ def find_relevant_src(index, data_src, user_query):
 
     related_data = []
     if len(good_results) > 0:
-        extracted_data = extract_filtered_json_data(data_src, good_results[0].tolist())
+        if type == "json":
+            extracted_data = extract_filtered_json_data(data_src, good_results[0].tolist())
+        else:
+            extracted_data = extract_from_np(data_src, good_results[0].tolist())
         related_data.extend(extracted_data)
 
     return related_data
@@ -202,11 +212,13 @@ print(st.session_state.messages)
 
 if "data_index" not in st.session_state:
     print("Initializing data index")
-    st.session_state.data_index = load_embeddings()
+    st.session_state.data_index = load_embeddings("course_embeddings_v3.index")
+    st.session_state.bst_index = load_embeddings("bst_embeddings.index")
 
 if "data_src" not in st.session_state:
     print("Initializing data source")
     st.session_state.data_src = pd.read_csv(load_from_bucket("codechum_src.csv"))
+    st.session_state.bst_src = pd.read_csv(load_from_bucket("bst_src.csv"))
 
 data_index = st.session_state.data_index
 data_src = st.session_state.data_src
@@ -223,8 +235,9 @@ if prompt := st.chat_input("Ask something"):
     if is_injection(prompt):
         prompt = f"{os.getenv("PROMPT_INJECTION_FLAG_PROMPT")} {prompt}"
 
-    relevant_data = find_relevant_src(data_index, data_src, prompt)
-    # print(relevant_data)
+    relevant_data = find_relevant_src(data_index, data_src, "json", prompt)
+    bst_relevant_data = find_relevant_src(st.session_state.bst_index, st.session_state.bst_src, "np", prompt)
+    
     user_prompt = {"role": "user", "content": prompt}
     session_history.append(user_prompt)
     st.session_state.messages.append(user_prompt)
@@ -239,9 +252,21 @@ if prompt := st.chat_input("Ask something"):
             {
                 "role": "system",
                 "content": "Include this data (have it in a list format) from Codechum for suggestions:\n"
-                + relevant_data_str,
+                + relevant_data_str
             }
         )
+    if bst_relevant_data:
+        relevant_data_str = json.dumps(
+            bst_relevant_data, indent=4
+        )  # Convert JSON to string
+        st.session_state.messages.append(
+            {
+                "role": "system",
+                "content": "Remember that this data is separate from Codechum. Include this data:\n"
+                + relevant_data_str
+            }
+        )
+    print(st.session_state.messages)
     # print(os.getenv('TEST_MODE_GUIDELINES'))
     asyncio.run(generate_response())
     for msg in st.session_state.messages:
