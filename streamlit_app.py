@@ -13,7 +13,7 @@ import torch
 import pandas as pd
 import json
 import uuid
-import requests  # Import requests library for Lakera Guard API call
+import requests 
 
 load_dotenv(dotenv_path='.env')
 
@@ -21,7 +21,7 @@ torch.classes.__path__ = []
 
 url = os.getenv('SUPABASE_URL')
 key = os.getenv('SUPABASE_KEY')
-lakera_guard_api_key = os.getenv('LAKERA_GUARD_API_KEY')  # API key for Lakera Guard
+lakera_guard_api_key = os.getenv('LAKERA_GUARD_API_KEY')  
 supabase: Client = create_client(url, key)
 
 api_keys = [os.getenv('GROQ_API_KEY')]
@@ -104,7 +104,7 @@ def call_lakera_guard_api(user_message):
         headers=headers
     )
     if response.status_code == 200:
-        return response.json()  # Returns the Lakera Guard response
+        return response.json()
     else:
         print(f"Error calling Lakera Guard API: {response.status_code}")
         return None
@@ -188,7 +188,6 @@ if prompt := st.chat_input("Ask something"):
     with st.chat_message("user"):
         display_text(prompt)
     
-    # Call Lakera Guard to validate the input before processing
     lakera_guard_response = call_lakera_guard_api(prompt)
     if lakera_guard_response and lakera_guard_response.get("is_safe", True):
         relevant_data = find_relevant_src(data_index, data_src, prompt)
