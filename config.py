@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
 from supabase import create_client, Client
 from groq import Groq
 
@@ -17,3 +18,10 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 guidelines = os.getenv('TEST_MODE_GUIDELINES')
 data_index = None  
 data_src = None  
+
+protectai_client = InferenceClient(
+    provider="hf-inference",
+    api_key=os.getenv("PROTECTAI_API_KEY"),
+)
+
+PROMPT_INJECTION_FLAG = os.getenv("PROMPT_INJECTION_FLAG_PROMPT")

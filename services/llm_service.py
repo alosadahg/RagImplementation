@@ -6,9 +6,9 @@ import time
 import uuid
 from groq import RateLimitError, Groq
 from services.session_service import save_session_to_supabase
-from config import API_KEYS, MODEL_NAME, client, api_index, guidelines
+from config import *
 from models import AskRequest, AskResponse
-from services.relevant_data_service import find_relevant_src
+from services.relevant_data_service import *
 
 SESSION_CACHE = {}
 
@@ -54,6 +54,17 @@ async def call_api_with_retry(messages: list, max_retries: int = 5) -> str:
 
     return "I'm currently experiencing high traffic. Please try again in a moment."
 
+def is_injection(text, threshold=0.95):
+    classification_result = protectai_client.text_classification(
+        text=text,
+        model="protectai/deberta-v3-base-prompt-injection-v2",
+    )
+    print("Classification result:", classification_result)
+    for result in classification_result:
+        if result.label.upper() == "INJECTION" and result.score >= threshold:
+            return True
+    return False
+
 async def ask(request: AskRequest, data_index, data_src) -> str:
     
     if not request.session_id:
@@ -72,20 +83,16 @@ async def ask(request: AskRequest, data_index, data_src) -> str:
             "content": guidelines
         })
 
+    if is_injection(request.prompt):
+        request.prompt = f"{PROMPT_INJECTION_FLAG} {request.prompt}"
+
     user_prompt_message = {
         "role": "user",
         "content": request.prompt
     }
-
+    
     session_history.append(user_prompt_message)
-    relevant_data = find_relevant_src(data_index, data_src, request.prompt)
-
-    if relevant_data:
-        data_str = json.dumps(relevant_data, indent=4)
-        session_history.append({
-            "role": "system",
-            "content": "Include this data (have it in a list format) from Codechum for suggestions:\n" + data_str
-        })
+    session_history = process_relevant_data(data_index, data_src, request.prompt, session_history)
 
     start_time = time.time()
     assistant_reply = await call_api_with_retry(session_history)
@@ -106,3 +113,5 @@ async def ask(request: AskRequest, data_index, data_src) -> str:
         response=assistant_reply,
         response_time=elapsed_time
     )
+
+

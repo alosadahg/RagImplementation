@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
     global data_index, data_src
     # Startup logic: load resources
     print("[Startup] Loading FAISS index and CSV from Supabase...")
-    data_index = load_embeddings()
-    data_src = pd.read_csv(load_from_bucket("codechum_src.csv"))
+    data_index = load_index_files()
+    data_src = load_csv_files()
     print("[Startup] Done loading resources.")
     
     yield  # Application is running
