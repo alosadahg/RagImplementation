@@ -232,16 +232,16 @@ async def generate_response():
     response = await call_api_with_retry(st.session_state.messages)
     # if response:
     #     cache[cache_key] = response
-
     result = {"role": "assistant", "content": response}
     if len(st.session_state.messages) > 1:
         with st.chat_message("assistant"):
             display_text(response)
     session_history.append(result)
     st.session_state.messages.append(result)
-    await save_session_to_supabase(
-        st.session_state.session_id, st.session_state.messages
-    )
+    if len(st.session_state.messages) > 2:
+        await save_session_to_supabase(
+            st.session_state.session_id, st.session_state.messages
+        )
 
 
 def is_injection(text, threshold=0.95):
@@ -292,7 +292,6 @@ if prompt := st.chat_input("Ask something"):
         {"role": "system", "content": os.getenv("TEST_MODE_GUIDELINES")}
     )
     process_relevant_data(prompt)
-    print(st.session_state.messages)
     # print(os.getenv('TEST_MODE_GUIDELINES'))
     asyncio.run(generate_response())
     for msg in st.session_state.messages:
