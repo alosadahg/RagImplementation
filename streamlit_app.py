@@ -32,10 +32,6 @@ model = "llama-3.3-70b-versatile"
 session_history = []
 cache = {}
 
-protectai_model_name = "protectai/deberta-v3-base-prompt-injection-v2"
-tokenizer = AutoTokenizer.from_pretrained(protectai_model_name)
-PROTECTAI_MODEL = AutoModelForSequenceClassification.from_pretrained(protectai_model_name)
-
 def load_from_bucket(file_name):
     with open(f"{file_name}", "wb+") as f:
         response = supabase.storage.from_("rag").download(f"{file_name}")
@@ -48,8 +44,18 @@ def load_embeddings(file):
     return data_src_index
 
 
+@st.cache_resource
+def load_embeddings_cached(file):
+    """Loads embedding index file (cached)."""
+    return load_embeddings(file)  # Assuming load_embeddings() is defined elsewhere
+
+@st.cache_resource
+def load_data_cached(file):
+    """Loads CSV source file (cached)."""
+    return pd.read_csv(load_from_bucket(file))  # Assuming load_from_bucket() is defined elsewhere
+
 def load_index_files():
-    """Loads embedding index files into session state."""
+    """Loads embedding index files into session state if not already loaded."""
     index_files = {
         "data_index": "course_embeddings_v3.index",
         "bst_index": "bst_embeddings.index",
@@ -62,10 +68,10 @@ def load_index_files():
     for key, file in index_files.items():
         if key not in st.session_state:
             print(f"Initializing {key}")
-            st.session_state[key] = load_embeddings(file)
+            st.session_state[key] = load_embeddings_cached(file)
 
 def load_csv_files():
-    """Loads CSV source files into session state."""
+    """Loads CSV source files into session state if not already loaded."""
     csv_files = {
         "data_src": "codechum_src.csv",
         "bst_src": "bst_src.csv",
@@ -78,7 +84,7 @@ def load_csv_files():
     for key, file in csv_files.items():
         if key not in st.session_state:
             print(f"Initializing {key}")
-            st.session_state[key] = pd.read_csv(load_from_bucket(file))
+            st.session_state[key] = load_data_cached(file)
 
 def append_relevant_data(label, data):
     """Appends relevant data to the session state messages."""
@@ -161,6 +167,14 @@ def extract_from_np(data_src, indices):
 @st.cache_resource
 def load_model():
     return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+@st.cache_resource
+def load_cache():
+    """Load the model and tokenizer, and cache them."""
+    protectai_model_name = "protectai/deberta-v3-base-prompt-injection-v2"
+    tokenizer = AutoTokenizer.from_pretrained(protectai_model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(protectai_model_name)
+    return model, tokenizer
 
 def find_relevant_src(index, data_src, type, user_query):
     embedding_model = load_model()
@@ -248,10 +262,11 @@ async def generate_response():
 
 
 def is_injection(text, threshold=0.95):
+    model, tokenizer = load_cache()
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
 
     with torch.no_grad():
-        outputs = PROTECTAI_MODEL(**inputs)
+        outputs = model(**inputs)
         logits = outputs.logits
         probabilities = torch.nn.functional.softmax(logits, dim=-1)
 
