@@ -3,6 +3,11 @@ from dotenv import load_dotenv
 from huggingface_hub import InferenceClient
 from supabase import create_client, Client
 from groq import Groq
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+protectai_model_name = "protectai/deberta-v3-base-prompt-injection-v2"
+tokenizer = AutoTokenizer.from_pretrained(protectai_model_name)
+PROTECTAI_MODEL = AutoModelForSequenceClassification.from_pretrained(protectai_model_name)
 
 load_dotenv(dotenv_path=".env")
 

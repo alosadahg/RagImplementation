@@ -9,6 +9,7 @@ from services.session_service import save_session_to_supabase
 from config import *
 from models import AskRequest, AskResponse
 from services.relevant_data_service import *
+import torch
 
 SESSION_CACHE = {}
 
@@ -55,15 +56,19 @@ async def call_api_with_retry(messages: list, max_retries: int = 5) -> str:
     return "I'm currently experiencing high traffic. Please try again in a moment."
 
 def is_injection(text, threshold=0.95):
-    classification_result = protectai_client.text_classification(
-        text=text,
-        model="protectai/deberta-v3-base-prompt-injection-v2",
-    )
-    print("Classification result:", classification_result)
-    for result in classification_result:
-        if result.label.upper() == "INJECTION" and result.score >= threshold:
-            return True
-    return False
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+
+    with torch.no_grad():
+        outputs = PROTECTAI_MODEL(**inputs)
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=-1)
+
+    injection_score = probabilities[0][1].item()  
+
+    print("Injection Score:", injection_score)
+
+    return injection_score >= threshold
+
 
 async def ask(request: AskRequest, data_index, data_src) -> str:
     
