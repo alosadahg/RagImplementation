@@ -14,6 +14,7 @@ import torch
 import pandas as pd
 import json
 import uuid
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 load_dotenv(dotenv_path=".env")
 
@@ -28,14 +29,12 @@ api_index = 0
 client = Groq(api_key=api_keys[api_index])
 model = "llama-3.3-70b-versatile"
 
-protectai_client = InferenceClient(
-    provider="hf-inference",
-    api_key=os.getenv("PROTECTAI_API_KEY"),
-)
-
 session_history = []
 cache = {}
 
+protectai_model_name = "protectai/deberta-v3-base-prompt-injection-v2"
+tokenizer = AutoTokenizer.from_pretrained(protectai_model_name)
+PROTECTAI_MODEL = AutoModelForSequenceClassification.from_pretrained(protectai_model_name)
 
 def load_from_bucket(file_name):
     with open(f"{file_name}", "wb+") as f:
@@ -245,15 +244,18 @@ async def generate_response():
 
 
 def is_injection(text, threshold=0.95):
-    classification_result = protectai_client.text_classification(
-        text=text,
-        model="protectai/deberta-v3-base-prompt-injection-v2",
-    )
-    print("Classification result:", classification_result)
-    for result in classification_result:
-        if result.label.upper() == "INJECTION" and result.score >= threshold:
-            return True
-    return False
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+
+    with torch.no_grad():
+        outputs = PROTECTAI_MODEL(**inputs)
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=-1)
+
+    injection_score = probabilities[0][1].item()  
+
+    print("Injection Score:", injection_score)
+
+    return injection_score >= threshold
 
 
 st.title("Bruno - Your Purrfect Learning Companion")
