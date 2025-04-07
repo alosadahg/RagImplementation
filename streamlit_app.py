@@ -158,8 +158,12 @@ def extract_from_np(data_src, indices):
 
     return related_data
 
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
 def find_relevant_src(index, data_src, type, user_query):
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    embedding_model = load_model()
     query_embeddings = embedding_model.encode([user_query])
 
     k = 4
