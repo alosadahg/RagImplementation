@@ -166,14 +166,12 @@ def extract_from_np(data_src, indices):
 
 @st.cache_resource
 def load_model():
-    return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return SentenceTransformer("models/all-MiniLM-L6-v2")
 
 @st.cache_resource
 def load_cache():
-    """Load the model and tokenizer, and cache them."""
-    protectai_model_name = "protectai/deberta-v3-base-prompt-injection-v2"
-    tokenizer = AutoTokenizer.from_pretrained(protectai_model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(protectai_model_name)
+    tokenizer = AutoTokenizer.from_pretrained("models/deberta-v3-base")
+    model = AutoModelForSequenceClassification.from_pretrained("models/deberta-v3-base")
     return model, tokenizer
 
 def find_relevant_src(index, data_src, type, user_query):
