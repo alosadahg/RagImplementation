@@ -117,10 +117,14 @@ def process_relevant_data(prompt):
         append_relevant_data(f"Include this data from {label}", relevant_data)
 
 async def save_session_to_supabase(session_id, messages):
+    for message in messages:
+        if message["role"] == "system":
+            messages.remove(message)
+
     data = {"session_id": str(session_id), "messages": json.dumps(messages, indent=4)}
 
     await asyncio.to_thread(
-        lambda: supabase.table("session_history").upsert(data).execute()
+        lambda: supabase.table("session_history_streamlit").upsert(data).execute()
     )
 
 
