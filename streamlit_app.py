@@ -20,13 +20,13 @@ load_dotenv(dotenv_path=".env")
 
 torch.classes.__path__ = []
 
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-api_keys = [os.getenv("GROQ_API_KEY")]
+api_key = st.secrets["GROQ_API_KEY"]
 api_index = 0
-client = Groq(api_key=api_keys[api_index])
+client = Groq(api_key=api_key)
 model = "llama-3.3-70b-versatile"
 
 session_history = []
@@ -44,12 +44,12 @@ def load_embeddings(file):
     return data_src_index
 
 
-@st.cache_resource
+@st.cache_data
 def load_embeddings_cached(file):
     """Loads embedding index file (cached)."""
     return load_embeddings(file)  # Assuming load_embeddings() is defined elsewhere
 
-@st.cache_resource
+@st.cache_data
 def load_data_cached(file):
     """Loads CSV source file (cached)."""
     return pd.read_csv(load_from_bucket(file))  # Assuming load_from_bucket() is defined elsewhere
@@ -166,12 +166,12 @@ def extract_from_np(data_src, indices):
 
 @st.cache_resource
 def load_model():
-    return SentenceTransformer("models/all-MiniLM-L6-v2")
+    return SentenceTransformer("all-MiniLM-L6-v2")
 
 @st.cache_resource
 def load_cache():
-    tokenizer = AutoTokenizer.from_pretrained("models/deberta-v3-base")
-    model = AutoModelForSequenceClassification.from_pretrained("models/deberta-v3-base")
+    tokenizer = AutoTokenizer.from_pretrained("protectai/deberta-v3-base-prompt-injection-v2")
+    model = AutoModelForSequenceClassification.from_pretrained("protectai/deberta-v3-base-prompt-injection-v2")
     return model, tokenizer
 
 def find_relevant_src(index, data_src, type, user_query):
@@ -216,8 +216,8 @@ async def call_api_with_retry(messages, max_retries=5):
             return response
         except RateLimitError as e:
             error_msg = str(e)
-            api_index = (api_index + 1) % len(api_keys)
-            client = Groq(api_key=api_keys[api_index])
+            # api_index = (api_index + 1) % len(api_keys)
+            # client = Groq(api_key=api_keys[api_index])
             wait_time = (
                 float(re.search(r"Please try again in ([\d.]+)s", error_msg).group(1))
                 if re.search(r"Please try again in ([\d.]+)s", error_msg)
@@ -302,16 +302,16 @@ if prompt := st.chat_input("Ask something"):
         display_text(prompt)
 
     if is_injection(prompt):
-        prompt = f"{os.getenv("PROMPT_INJECTION_FLAG_PROMPT")} {prompt}"
+        prompt = f"{st.secrets["PROMPT_INJECTION_FLAG_PROMPT"]} {prompt}"
 
     user_prompt = {"role": "user", "content": prompt}
     session_history.append(user_prompt)
     st.session_state.messages.append(user_prompt)
     st.session_state.messages.append(
-        {"role": "system", "content": os.getenv("TEST_MODE_GUIDELINES")}
+        {"role": "system", "content": st.secrets["TEST_MODE_GUIDELINES"]}
     )
     process_relevant_data(prompt)
-    # print(os.getenv('TEST_MODE_GUIDELINES'))
+    # print(st.secrets['TEST_MODE_GUIDELINES'))
     asyncio.run(generate_response())
     for msg in st.session_state.messages:
         if msg["role"] == "system":
