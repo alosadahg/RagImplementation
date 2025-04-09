@@ -19,18 +19,18 @@ load_dotenv(dotenv_path=".env")
 
 torch.classes.__path__ = []
 
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
-api_keys = [os.getenv("GROQ_API_KEY")]
+api_key = st.secrets["GROQ_API_KEY"]
 api_index = 0
-client = Groq(api_key=api_keys[api_index])
+client = Groq(api_key=api_key)
 model = "llama-3.3-70b-versatile"
 
 protectai_client = InferenceClient(
     provider="hf-inference",
-    api_key=os.getenv("PROTECTAI_API_KEY"),
+    api_key=st.secrets["PROTECTAI_API_KEY"],
 )
 
 session_history = []
@@ -139,8 +139,8 @@ async def call_api_with_retry(messages, max_retries=5):
             return response
         except RateLimitError as e:
             error_msg = str(e)
-            api_index = (api_index + 1) % len(api_keys)
-            client = Groq(api_key=api_keys[api_index])
+            # api_index = (api_index + 1) % len(api_keys)
+            # client = Groq(api_key=api_keys[api_index])
             wait_time = (
                 float(re.search(r"Please try again in ([\d.]+)s", error_msg).group(1))
                 if re.search(r"Please try again in ([\d.]+)s", error_msg)
@@ -233,7 +233,7 @@ if prompt := st.chat_input("Ask something"):
         display_text(prompt)
 
     if is_injection(prompt):
-        prompt = f"{os.getenv("PROMPT_INJECTION_FLAG_PROMPT")} {prompt}"
+        prompt = f"{st.secrets["PROMPT_INJECTION_FLAG_PROMPT"]} {prompt}"
 
     relevant_data = find_relevant_src(data_index, data_src, "json", prompt)
     bst_relevant_data = find_relevant_src(st.session_state.bst_index, st.session_state.bst_src, "np", prompt)
@@ -242,7 +242,7 @@ if prompt := st.chat_input("Ask something"):
     session_history.append(user_prompt)
     st.session_state.messages.append(user_prompt)
     st.session_state.messages.append(
-        {"role": "system", "content": os.getenv("TEST_MODE_GUIDELINES")}
+        {"role": "system", "content": st.secrets["TEST_MODE_GUIDELINES"]}
     )
     if relevant_data:
         relevant_data_str = json.dumps(
@@ -267,7 +267,7 @@ if prompt := st.chat_input("Ask something"):
             }
         )
     print(st.session_state.messages)
-    # print(os.getenv('TEST_MODE_GUIDELINES'))
+    # print(st.secrets['TEST_MODE_GUIDELINES'))
     asyncio.run(generate_response())
     for msg in st.session_state.messages:
         if msg["role"] == "system":
